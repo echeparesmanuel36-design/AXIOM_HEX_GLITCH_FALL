@@ -1,0 +1,18 @@
+{
+  "name": "axiom_core_engine",
+  "type": "module",
+  "collaborators": [
+    "Manuel <Comandante de Axiom Systems>"
+  ],
+  "version": "8.8.8",
+  "files": [
+    "axiom_core_engine_bg.wasm",
+    "axiom_core_engine.js",
+    "axiom_core_engine.d.ts"
+  ],
+  "main": "axiom_core_engine.js",
+  "types": "axiom_core_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AXIOM_SPHERE_CONTROL // SOBERANO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Share+Tech+Mono&display=swap');
+        body { background-color: #020205; font-family: 'Orbitron', sans-serif; overflow: hidden; touch-action: none; }
+        .glass-morphic-mesh { background: rgba(8, 8, 15, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(0, 240, 255, 0.1); }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col justify-between items-center p-4 text-white select-none">
+
+    <header class="w-full max-w-lg flex justify-between items-center z-50 mt-2">
+        <div class="flex flex-col">
+            <span class="text-[10px] text-zinc-500 tracking-widest font-black">AXIOM BALL CONTROL 3D</span>
+            <h1 id="floor_display" class="text-2xl font-black text-cyan-400 tracking-wider">LEVEL: 0</h1>
+        </div>
+        <div class="glass-morphic-mesh px-3 py-1 rounded text-right">
+            <span id="size_badge" class="text-[10px] text-yellow-400 block tracking-widest font-bold font-mono">ESCALA PLACA: 100%</span>
+            <span class="text-xs font-mono font-bold text-zinc-400">GPU REALTIME</span>
+        </div>
+    </header>
+
+    <main id="game_container" class="relative w-full max-w-[500px] h-1/2 flex justify-center items-center my-2 z-20">
+        <div id="canvas_container" class="absolute inset-0 w-full h-full rounded-2xl border border-zinc-900 overflow-hidden shadow-2xl"></div>
+        
+        <div id="pique-message-bunker" class="hidden absolute w-11/12 max-w-[400px] glass-morphic-mesh p-6 rounded-2xl text-center z-50 shadow-[0_0_60px_rgba(239,68,68,0.2)]">
+            <div id="telemetry_text" class="text-sm font-mono font-bold text-zinc-300 mb-6 leading-relaxed"></div>
+            <div class="w-full flex flex-col gap-3">
+                <input id="supabase_email" type="email" placeholder="INTRODUCE TU EMAIL DE PILOTO" class="w-full bg-black/60 border border-red-500/30 rounded-lg p-3 text-center text-xs font-mono tracking-widest text-red-400 placeholder-zinc-600 focus:outline-none focus:border-red-400 uppercase">
+                <button id="btn_supabase" class="w-full bg-red-950/40 border border-red-400/50 active:bg-red-400 active:text-black p-3 rounded-lg font-black text-xs tracking-widest uppercase">REGISTRAR EN SUPABASE</button>
+            </div>
+            <button onclick="location.reload()" class="text-[10px] text-zinc-400 font-bold tracking-widest uppercase mt-5 block w-full text-center">REINICIAR REACTOR</button>
+        </div>
+    </main>
+
+    <footer class="w-full max-w-lg z-50 flex flex-col items-center gap-3 mb-2">
+        <div class="grid grid-cols-3 gap-2 w-full max-w-[280px]">
+            <div></div>
+            <button id="btn-up" class="bg-zinc-900/90 active:bg-cyan-500/30 border border-zinc-800 active:border-cyan-400 p-4 rounded-lg font-black text-center text-sm uppercase">▲</button>
+            <div></div>
+            <button id="btn-left" class="bg-zinc-900/90 active:bg-cyan-500/30 border border-zinc-800 active:border-cyan-400 p-4 rounded-lg font-black text-center text-sm uppercase">◀</button>
+            <button id="btn-down" class="bg-zinc-900/90 active:bg-cyan-500/30 border border-zinc-800 active:border-cyan-400 p-4 rounded-lg font-black text-center text-sm uppercase">▼</button>
+            <button id="btn-right" class="bg-zinc-900/90 active:bg-cyan-500/30 border border-zinc-800 active:border-cyan-400 p-4 rounded-lg font-black text-center text-sm uppercase">▶</button>
+        </div>
+        <div class="text-center text-[9px] text-zinc-600 font-mono">
+            Usa los botones o las flechas de tu teclado físico para mover la esfera metálica.
+        </div>
+    </footer>
+
+    <script type="module">
+        import init, { AxiomReactor } from './pkg/axiom_core_engine.js';
+        
+        let reactor = null, currentFloor = 0, nonce = 0, isGameOver = false, audioCtx = null;
+        let scene, camera, renderer, sphere, platformGroup;
+        let lastTime = performance.now();
+        
+        // Escala inicial de la placa redonda
+        let escalaPlaca = 1.0; 
+        const porcentajeRojo = 0.40; // 40% rojo, 60% azul
+
+        function playSound(type) {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                if (type === 'pass') {
+                    osc.frequency.setValueAtTime(450 + (currentFloor * 40), audioCtx.currentTime);
+                    osc.type = 'triangle'; gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.15);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+                } else if (type === 'crash') {
+                    osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+                    osc.type = 'sawtooth'; gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+                }
+            } catch(e) {}
+        }
+
+        function inicializarEscena3D() {
+            const container = document.getElementById("canvas_container");
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x020205);
+
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+            camera.position.set(0, 4.0, 5.0); // Cámara cenital inclinada para controlar el espacio 3D
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(4, 10, 5); scene.add(dirLight);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+            // ESFERA DE MERCURIO MÓVIL SOBERANA
+            const sphereGeo = new THREE.SphereGeometry(0.25, 32, 32);
+            const sphereMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.05 });
+            sphere = new THREE.Mesh(sphereGeo, sphereMat);
+            // Empieza arriba en el centro
+            sphere.position.set(0, 2.2, 0); 
+            scene.add(sphere);
+
+            platformGroup = new THREE.Group();
+            scene.add(platformGroup);
+
+            generarObleaBicolor();
+        }
+
+        function generarObleaBicolor() {
+            while(platformGroup.children.length > 0){ platformGroup.remove(platformGroup.children[0]); }
+
+            let arcoRojo = Math.PI * 2 * porcentajeRojo;
+            let arcoAzul = Math.PI * 2 - arcoRojo;
+
+            // Sector Azul Seguro
+            const azulGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.2, 32, 1, false, 0, arcoAzul);
+            const azulMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, metalness: 0.6, roughness: 0.2 });
+            const pAzul = new THREE.Mesh(azulGeo, azulMat);
+            platformGroup.add(pAzul);
+
+            // Sector Rojo Inestable
+            const rojaGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.2, 32, 1, false, arcoAzul, arcoRojo);
+            const rojaMat = new THREE.MeshStandardMaterial({ color: 0xff3333, metalness: 0.7, roughness: 0.1 });
+            const pRoja = new THREE.Mesh(rojaGeo, rojaMat);
+            platformGroup.add(pRoja);
+
+            // Aplicamos el encogimiento dinámico según el nivel (Mejora Manuel)
+            platformGroup.scale.set(escalaPlaca, 1.0, escalaPlaca);
+            document.getElementById("size_badge").innerText = `ESCALA PLACA: ${Math.round(escalaPlaca * 100)}%`;
+        }
+
+        window.AxiomEngine = {
+            despertar: async function(llave) {
+                try {
+                    await init();
+                    reactor = new AxiomReactor(llave);
+                    inicializarEscena3D();
+                    this.bucle();
+                    return true;
+                } catch(e) { return false; }
+            },
+            bucle: function() {
+                const render = (now) => {
+                    if (isGameOver) return;
+                    nonce++;
+                    let delta = now - lastTime; lastTime = now;
+
+                    // Rotación automática constante de la placa para añadir dificultad
+                    platformGroup.rotation.y += 0.015 + (currentFloor * 0.002);
+
+                    // CAÍDA DE LA BOLA
+                    sphere.position.y -= 0.012 + (currentFloor * 0.0005);
+                    sphere.scale.y = 1.0 + (Math.sin(now * 0.01) * 0.04);
+
+                    // DETECCIÓN DE IMPACTO EN SUPERFICIE
+                    if (sphere.position.y <= 0.1) {
+                        // Calcular distancia del centro para ver si se sale de la placa encogida
+                        let distanciaCentro = Math.sqrt(sphere.position.x * sphere.position.x + sphere.position.z * sphere.position.z);
+                        let radioMaximoValido = 1.5 * escalaPlaca;
+
+                        if (distanciaCentro > radioMaximoValido) {
+                            // ¡TE HAS CAÍDO POR FUERA DE LA PLACA ENCOGIDA! -> MUERTE
+                            this.detonarReactor("TE HAS CAÍDO AL VACÍO PORQUE LA PLACA ERA DEMASIADO PEQUEÑA");
+                        } else {
+                            // Calcular el ángulo relativo del impacto respecto al giro de la placa
+                            let anguloImpacto = Math.atan2(sphere.position.z, sphere.position.x) - platformGroup.rotation.y;
+                            anguloImpacto = anguloImpacto % (Math.PI * 2);
+                            if (anguloImpacto < 0) anguloImpacto += (Math.PI * 2);
+
+                            let limiteAzul = (Math.PI * 2) * (1.0 - porcentajeRojo);
+
+                            if (anguloImpacto < limiteAzul) {
+                                // ¡CAE EN AZUL SOBERANO! -> PASAS DE NIVEL
+                                currentFloor += 1;
+                                sphere.position.set(0, 2.2, 0); // Resetea arriba en el centro
+                                playSound('pass');
+
+                                // ENCOGIMIENTO BRUTAL DE LA PLACA (Se encoge un 12% por nivel, mínimo 25%)
+                                escalaPlaca = Math.max(0.25, escalaPlaca - 0.12);
+                                generarObleaBicolor();
+                            } else {
+                                // ¡TOCA ZONA ROJA INESTABLE! -> EXPLOSIÓN
+                                this.detonarReactor("EL ORBE HA TOCADO EL SILICIO INESTABLE ROJO");
+                            }
+                        }
+                    }
+
+                    // Pasar telemetría a tu Rust
+                    let payload = {
+                        current_floor: currentFloor, free_fall_count: 0, tower_collision: isGameOver,
+                        click_nonce: nonce, time_delta: delta,
+                        sphere_x: sphere.position.x, sphere_y: sphere.position.y, sphere_z: sphere.position.z,
+                        tower_rotation: platformGroup.rotation.y
+                    };
+
+                    try {
+                        let respuestaRaw = reactor.execute_game_loop(JSON.stringify(payload));
+                        let res = JSON.parse(respuestaRaw);
+                        document.getElementById("floor_display").innerHTML = `LEVEL: ${currentFloor}`;
+                        renderer.render(scene, camera);
+                    } catch(e) {}
+
+                    requestAnimationFrame(render);
+                };
+                requestAnimationFrame(render);
+            },
+            moverPelota: function(mx, mz) {
+                if (isGameOver) return;
+                // Mover bola en el plano X y Z de la escena 3D real
+                sphere.position.x = Math.max(-2.0, Math.min(2.0, sphere.position.x + mx));
+                sphere.position.z = Math.max(-2.0, Math.min(2.0, sphere.position.z + mz));
+            },
+            detonarReactor: function(causa) {
+                isGameOver = true;
+                playSound('crash');
+                const bunker = document.getElementById('pique-message-bunker');
+                const text = document.getElementById('telemetry_text');
+                if (bunker && text) {
+                    bunker.style.display = 'block';
+                    text.innerHTML = `◤ COLAPSO: ${causa}.<br>TE HAS QUEDADO A <span class="text-red-500 font-black text-lg">${88 - currentFloor}</span> NIVELES DEL RÉCORD SOBERANO DE MANUEL ◢`;
+                }
+                if (navigator.vibrate) navigator.vibrate([400, 100, 400]);
+            }
+        };
+
+        // CONTROLES DE TECLADO FÍSICO (Flechas del PC)
+        window.addEventListener("keydown", (e) => {
+            if(e.key === "ArrowUp") window.AxiomEngine.moverPelota(0, -0.15);
+            if(e.key === "ArrowDown") window.AxiomEngine.moverPelota(0, 0.15);
+            if(e.key === "ArrowLeft") window.AxiomEngine.moverPelota(-0.15, 0);
+            if(e.key === "ArrowRight") window.AxiomEngine.moverPelota(0.15, 0);
+        });
+
+        // CONTROLES DE BOTONES DE LA INTERFAZ HUD
+        document.addEventListener("DOMContentLoaded", async () => {
+            const ok = await window.AxiomEngine.despertar("LYLBIG1017");
+            if (ok) {
+                document.getElementById("btn-up").addEventListener("click", () => window.AxiomEngine.moverPelota(0, -0.2));
+                document.getElementById("btn-down").addEventListener("click", () => window.AxiomEngine.moverPelota(0, 0.2));
+                document.getElementById("btn-left").addEventListener("click", () => window.AxiomEngine.moverPelota(-0.2, 0));
+                document.getElementById("btn-right").addEventListener("click", () => window.AxiomEngine.moverPelota(0.2, 0));
+                
+                document.getElementById("btn_supabase").addEventListener("click", () => {
+                    const email = document.getElementById("supabase_email").value;
+                    if(email) alert(`FIRMA SINCRONIZADA: [${email.toUpperCase()}] guardado en nivel [${currentFloor}].`);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
